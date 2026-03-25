@@ -2,6 +2,7 @@ import sqlite3
 from flask import Flask, request, jsonify
 import json
 
+
 app = Flask(__name__)
 db_name = 'users.db'
 def init_db():
