@@ -1,9 +1,10 @@
 import sqlite3
 from flask import Flask, request, jsonify
+import json
 
 app = Flask(__name__)
-db_name = 'epshtein.db'
-def init_db_epshtein():
+db_name = 'users.db'
+def init_db():
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
     cursor.execute('''
@@ -12,6 +13,8 @@ def init_db_epshtein():
             username TEXT NOT NULL UNIQUE,
             phone TEXT NOT NULL UNIQUE,
             password TEXT NOT NULL,
+            event TEXT,
+            list_task TEXT,
             class INTEGER CHECK (class IN (0, 1))
         )
     ''')
@@ -23,7 +26,7 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-init_db_epshtein()
+init_db()
 
 
 @app.route('/register', methods=['POST'])
@@ -32,8 +35,8 @@ def register():
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            'INSERT INTO users (username, phone, password, class) VALUES (?, ?, ?, ?)',
-            (data['username'], data['phone'], data['password'], data['class'])
+            'INSERT INTO users (username, phone, password, event, list_task, class) VALUES (?, ?, ?, ?, ?, ?)',
+            (data['username'], data['phone'], data['password'], json.dumps([]), json.dumps([]), data['class'])
         )
         user_id = cursor.lastrowid
         conn.commit()
@@ -57,6 +60,35 @@ def login():
     else:
         return jsonify({"status": "error", "message": "Неверный логин или пароль"}), 401
 
+
+@app.route('/get_data', methods=['POST'])
+def get_data():
+    data = request.get_json()
+    conn = get_db_connection()
+    user = conn.execute(
+        'SELECT username, phone, event, list_task FROM users WHERE id = ?',
+        (data['id'],)
+    ).fetchone()
+    conn.close()
+    if user:
+        return jsonify({'status': 'success', 'username': user['username'], 'phone': user['phone'],
+                        'event': user['event'], 'list_task': user['list_task']})
+    else:
+        return jsonify({'status': 'error', 'message': 'Ошибка'})
+
+@app.route('/upload_data', methods=['POST'])
+def upload_data():
+    data = request.get_json()
+    conn = get_db_connection()
+    user_id = data.get('id')
+    task = data.get('event')
+    conn.execute(
+        'UPDATE user SET list_task = ? WHERE id = ?',
+        (json.dumps(task, ensure_ascii=False), user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Список обновлен"})
 if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 5000))
