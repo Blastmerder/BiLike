@@ -77,19 +77,36 @@ def get_data():
     else:
         return jsonify({'status': 'error', 'message': 'Ошибка'})
 
+
 @app.route('/upload_data', methods=['POST'])
 def upload_data():
     data = request.get_json()
-    conn = get_db_connection()
     user_id = data.get('id')
-    task = data.get('event')
+    new_event = data.get('event', [])
+    new_tasks = data.get('list_task', [])
+    conn = get_db_connection()
+    db_data = conn.execute(
+        'SELECT list_task, event FROM users WHERE id = ?',
+        (user_id,)
+    ).fetchone()
+    if db_data is None:
+        conn.close()
+        return jsonify({"status": "error", "message": "Пользователь не найден"}), 404
+    old_tasks = json.loads(db_data['list_task']) if db_data['list_task'] else []
+    old_events = json.loads(db_data['event']) if db_data['event'] else []
+    updated_tasks = old_tasks + new_tasks
+    updated_events = old_events + new_event
     conn.execute(
-        'UPDATE user SET list_task = ? WHERE id = ?',
-        (json.dumps(task, ensure_ascii=False), user_id)
+        'UPDATE users SET list_task = ?, event = ? WHERE id = ?',
+        (json.dumps(updated_tasks, ensure_ascii=False),
+         json.dumps(updated_events, ensure_ascii=False),
+         user_id)
     )
     conn.commit()
     conn.close()
-    return jsonify({"status": "success", "message": "Список обновлен"})
+    return jsonify({"status": "success"})
+
+
 if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 5000))
