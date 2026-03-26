@@ -10,4 +10,4 @@ COPY src/server-side/* ./
 RUN uv venv
 RUN uv pip install -r requirements
 
-CMD ["./run.sh"]
+CMD ["uv run app.py"]
