@@ -1,7 +1,7 @@
 FROM python:3.8-slim-buster
 
 WORKDIR /usr/local/
-COPY src/server-side/* ./
+COPY . .
 
 RUN echo $(ls)
 RUN pip install -r requirements.txt
