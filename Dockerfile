@@ -8,6 +8,9 @@ RUN apt-get install -y python uv
 WORKDIR /usr/local/a
 COPY src/server-side/* ./
 
+RUN python -m pip install --upgrade pip \
+    && pip install --no-cache-dir uv
+
 RUN uv venv
 RUN uv pip install -r requirements
 
