@@ -1,9 +1,11 @@
 import sqlite3
 from flask import Flask, request, jsonify
 import json
-
+from werkzeug.security import generate_password_hash, check_password_hash
+from flasgger import Swagger  # 1. Импортируем
 
 app = Flask(__name__)
+swagger = Swagger(app)
 db_name = 'users.db'
 def init_db():
     conn = sqlite3.connect(db_name)
@@ -37,7 +39,7 @@ def register():
     try:
         cursor = conn.execute(
             'INSERT INTO users (username, phone, password, event, list_task, class) VALUES (?, ?, ?, ?, ?, ?)',
-            (data['username'], data['phone'], data['password'], json.dumps([]), json.dumps([]), data['class'])
+            (data['username'], data['phone'], generate_password_hash(data['password']), json.dumps([]), json.dumps([]), data['class'])
         )
         user_id = cursor.lastrowid
         conn.commit()
@@ -49,14 +51,36 @@ def register():
 
 @app.route('/login', methods=['POST'])
 def login():
+    """
+        Авторизация пользователя
+        ---
+        parameters:
+          - name: body
+            in: body
+            required: true
+            schema:
+              id: LoginData
+              properties:
+                username:
+                  type: string
+                  example: ivan_ivanov
+                password:
+                  type: string
+                  example: 12345
+        responses:
+          200:
+            description: Успешный вход
+          401:
+            description: Неверный логин или пароль
+        """
     data = request.get_json()
     conn = get_db_connection()
     user = conn.execute(
-        'SELECT id, username FROM users WHERE username = ? AND password = ?',
-        (data['username'], data['password'])
+        'SELECT id, username FROM users WHERE username = ?',
+        (data['username'],)
     ).fetchone()
     conn.close()
-    if user:
+    if user and check_password_hash(user['password'], data['password']):
         return jsonify({"status": "success", "user_id": user['id']}), 200
     else:
         return jsonify({"status": "error", "message": "Неверный логин или пароль"}), 401
@@ -105,6 +129,7 @@ def upload_data():
     conn.commit()
     conn.close()
     return jsonify({"status": "success"})
+
 
 
 if __name__ == '__main__':
