@@ -3,7 +3,7 @@ EXPOSE 25565
 
 
 RUN apt-get update 
-RUN apt-get install -y python uv
+RUN apt-get install -y python
 
 WORKDIR /usr/local/a
 COPY src/server-side/* ./
