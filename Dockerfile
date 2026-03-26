@@ -8,6 +8,7 @@ RUN apt-get install -y python3 python3-pip
 WORKDIR /usr/local/a
 COPY src/server-side/* ./
 
+RUN python3 -m venv venv
 RUN pip install -r requirements
 
 CMD ["python3", "app.py"]
