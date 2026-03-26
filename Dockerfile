@@ -2,9 +2,10 @@ FROM ubuntu:latest
 EXPOSE 25565
 
 
-RUN apt-get update && apt-get install -y python uv
+RUN apt-get update 
+RUN apt-get install -y python uv
 
-WORKDIR /usr/local/app/mods
+WORKDIR /usr/local/a
 COPY src/server-side/* ./
 
 RUN uv venv
