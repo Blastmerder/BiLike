@@ -1,12 +1,16 @@
 import sqlite3
-from flask import Flask, request, jsonify
 import json
+import os
+from flask import Flask, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
-from flasgger import Swagger  # 1. Импортируем
+from flasgger import Swagger
 
 app = Flask(__name__)
+app.json.ensure_ascii = False
 swagger = Swagger(app)
 db_name = 'users.db'
+
+
 def init_db():
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
@@ -29,57 +33,89 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+
 init_db()
 
 
 @app.route('/register', methods=['POST'])
 def register():
+    """
+    Регистрация нового пользователя
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            username:
+              type: string
+              example: "ivan_ivanov"
+            phone:
+              type: string
+              example: "89001112233"
+            password:
+              type: string
+              example: "my_secret_password"
+            class:
+              type: integer
+              enum: [0, 1]
+              example: 1
+    responses:
+      201:
+        description: Пользователь успешно создан
+      400:
+        description: Ошибка (например, пользователь уже существует)
+    """
     data = request.get_json()
     conn = get_db_connection()
     try:
+        hashed_pw = generate_password_hash(data['password'])
         cursor = conn.execute(
             'INSERT INTO users (username, phone, password, event, list_task, class) VALUES (?, ?, ?, ?, ?, ?)',
-            (data['username'], data['phone'], generate_password_hash(data['password']), json.dumps([]), json.dumps([]), data['class'])
+            (data['username'], data['phone'], hashed_pw,
+             json.dumps([]), json.dumps([]), data['class'])
         )
         user_id = cursor.lastrowid
         conn.commit()
-        conn.close()
         return jsonify({"status": "success", "user_id": user_id}), 201
     except sqlite3.IntegrityError:
         return jsonify({"status": "error", "message": "User already exists"}), 400
+    finally:
+        conn.close()
 
 
 @app.route('/login', methods=['POST'])
 def login():
     """
-        Авторизация пользователя
-        ---
-        parameters:
-          - name: body
-            in: body
-            required: true
-            schema:
-              id: LoginData
-              properties:
-                username:
-                  type: string
-                  example: ivan_ivanov
-                password:
-                  type: string
-                  example: 12345
-        responses:
-          200:
-            description: Успешный вход
-          401:
-            description: Неверный логин или пароль
-        """
+    Авторизация пользователя
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            username:
+              type: string
+              example: "ivan_ivanov"
+            password:
+              type: string
+              example: "my_secret_password"
+    responses:
+      200:
+        description: Успешный вход
+      401:
+        description: Неверный логин или пароль
+    """
     data = request.get_json()
     conn = get_db_connection()
     user = conn.execute(
-        'SELECT id, username FROM users WHERE username = ?',
+        'SELECT id, username, password FROM users WHERE username = ?',
         (data['username'],)
     ).fetchone()
     conn.close()
+
     if user and check_password_hash(user['password'], data['password']):
         return jsonify({"status": "success", "user_id": user['id']}), 200
     else:
@@ -88,6 +124,22 @@ def login():
 
 @app.route('/get_data', methods=['POST'])
 def get_data():
+    """
+    Получение данных профиля по ID
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+              example: 1
+    responses:
+      200:
+        description: Данные успешно получены
+    """
     data = request.get_json()
     conn = get_db_connection()
     user = conn.execute(
@@ -95,27 +147,61 @@ def get_data():
         (data['id'],)
     ).fetchone()
     conn.close()
+
     if user:
-        return jsonify({'status': 'success', 'username': user['username'], 'phone': user['phone'],
-                        'event': user['event'], 'list_task': user['list_task']})
+        return jsonify({
+            'status': 'success',
+            'username': user['username'],
+            'phone': user['phone'],
+            'event': json.loads(user['event']) if user['event'] else [],
+            'list_task': json.loads(user['list_task']) if user['list_task'] else []
+        })
     else:
-        return jsonify({'status': 'error', 'message': 'Ошибка'})
+        return jsonify({'status': 'error', 'message': 'Пользователь не найден'}), 404
 
 
 @app.route('/upload_data', methods=['POST'])
 def upload_data():
+    """
+    Добавление новых задач и событий к существующим
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            id:
+              type: integer
+              example: 1
+            event:
+              type: array
+              items:
+                type: string
+              example: ["Новое событие"]
+            list_task:
+              type: array
+              items:
+                type: string
+              example: ["Новая задача"]
+    responses:
+      200:
+        description: Данные успешно обновлены
+    """
     data = request.get_json()
     user_id = data.get('id')
     new_event = data.get('event', [])
     new_tasks = data.get('list_task', [])
+
     conn = get_db_connection()
     db_data = conn.execute(
         'SELECT list_task, event FROM users WHERE id = ?',
         (user_id,)
     ).fetchone()
+
     if db_data is None:
         conn.close()
-        return jsonify({"status": "error", "message": "Пользователь не найден"}), 404
+        return jsonify({"status": "error", "message": "User not found"}), 404
     old_tasks = json.loads(db_data['list_task']) if db_data['list_task'] else []
     old_events = json.loads(db_data['event']) if db_data['event'] else []
     updated_tasks = old_tasks + new_tasks
@@ -131,8 +217,6 @@ def upload_data():
     return jsonify({"status": "success"})
 
 
-
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
