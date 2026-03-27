@@ -174,6 +174,50 @@ def get_data():
     return jsonify({'status': 'error', 'message': 'User not found'}), 404
 
 
+@app.route('/get_user_events', methods=['POST'])
+def get_user_events():
+    """
+    Получение всех событий пользователя по его айди
+    ---
+    tags: [Users]
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            user_id: {type: integer, example: 1}
+    responses:
+      200:
+        description: Список событий пользователя успешно получен
+      404:
+        description: Пользователь не найден
+    """
+    data = request.get_json()
+    u_id = data.get('id')
+    conn = get_db_connection()
+    try:
+        # Ищем пользователя и его список событий
+        user = conn.execute('SELECT event FROM users WHERE id = ?', (u_id,)).fetchone()
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 404
+
+        # Парсим JSON-строку с ID событий
+        event_ids = json.loads(user['event']) if user['event'] else []
+
+        if not event_ids:
+            return jsonify({"status": "success", "events": []}), 200
+
+        # Выбираем полную инфу по всем ивентам из списка
+        placeholders = ', '.join(['?'] * len(event_ids))
+        query = f'SELECT * FROM events WHERE id_event IN ({placeholders})'
+        events = conn.execute(query, event_ids).fetchall()
+
+        return jsonify({"status": "success", "events": [dict(e) for e in events]}), 200
+    finally:
+        conn.close()
+
+
 # --- АНАЛИТИКА И УПРАВЛЕНИЕ ---
 
 @app.route('/upload_data', methods=['POST'])
@@ -491,45 +535,6 @@ def get_sorted_users():
         conn.close()
 
 
-# --- НОВЫЙ МЕТОД: ТОП ЛИДЕРОВ ---
-
-@app.route('/get_top_users', methods=['GET'])
-def get_top_users():
-    """
-    Топ пользователей по очкам (пагинация)
-    ---
-    tags: [Analytics]
-    parameters:
-      - name: limit
-        in: query
-        type: integer
-        default: 10
-        description: "Сколько пользователей вернуть"
-      - name: offset
-        in: query
-        type: integer
-        default: 0
-        description: "Сколько пропустить (например, 4 для старта с 5-го места)"
-    responses:
-      200:
-        description: Список лидеров
-    """
-    limit = request.args.get('limit', 10, type=int)
-    offset = request.args.get('offset', 0, type=int)
-    conn = get_db_connection()
-    try:
-        query = 'SELECT id, username, points FROM users ORDER BY points DESC LIMIT ? OFFSET ?'
-        users = conn.execute(query, (limit, offset)).fetchall()
-        result = []
-        for i, row in enumerate(users):
-            d = dict(row)
-            d['rank'] = offset + i + 1
-            result.append(d)
-        return jsonify(result), 200
-    finally:
-        conn.close()
-
-
 # --- МЕТОДЫ ДЛЯ ВОЛОНТЕРОВ ---
 
 @app.route('/get_free_tasks', methods=['GET'])
@@ -598,6 +603,77 @@ def assign_task():
         conn.execute('UPDATE users SET list_task = ? WHERE id = ?', (json.dumps(current_tasks), u_id))
         conn.commit()
         return jsonify({"status": "success", "message": "Task successfully assigned"}), 200
+    finally:
+        conn.close()
+
+
+# --- НОВЫЕ МЕТОДЫ (Топ и Накрутка) ---
+
+@app.route('/get_top_users', methods=['GET'])
+def get_top_users():
+    """
+    Топ пользователей по очкам (пагинация)
+    ---
+    tags: [Analytics]
+    parameters:
+      - name: limit
+        in: query
+        type: integer
+        default: 10
+        description: "Сколько пользователей вернуть"
+      - name: offset
+        in: query
+        type: integer
+        default: 0
+        description: "Сколько пропустить"
+    """
+    limit = request.args.get('limit', 10, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    conn = get_db_connection()
+    try:
+        query = 'SELECT id, username, points FROM users ORDER BY points DESC LIMIT ? OFFSET ?'
+        users = conn.execute(query, (limit, offset)).fetchall()
+        result = []
+        for i, row in enumerate(users):
+            d = dict(row)
+            d['rank'] = offset + i + 1
+            result.append(d)
+        return jsonify(result), 200
+    finally:
+        conn.close()
+
+
+@app.route('/boost_points', methods=['POST'])
+def boost_points():
+    """
+    Накрутка поинтов пользователю
+    ---
+    tags: [Admin]
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          properties:
+            user_id: {type: integer, example: 1}
+            amount: {type: integer, example: 100}
+    responses:
+      200:
+        description: Очки добавлены
+    """
+    data = request.get_json()
+    u_id = data.get('user_id')
+    amount = data.get('amount', 0)
+
+    conn = get_db_connection()
+    try:
+        user = conn.execute('SELECT username FROM users WHERE id = ?', (u_id,)).fetchone()
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 404
+
+        conn.execute('UPDATE users SET points = points + ? WHERE id = ?', (amount, u_id))
+        conn.commit()
+        return jsonify({"status": "success", "message": f"Added {amount} points to {user['username']}"}), 200
     finally:
         conn.close()
 
